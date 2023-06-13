@@ -1,5 +1,5 @@
 # This file contains functions specific to checking for image uniqueness after downloading
-from os import listdir, path, remove, rename
+from os import listdir, mkdir, path, remove, rename
 from PIL import Image, UnidentifiedImageError
 import numpy as np
 import sys
@@ -111,7 +111,11 @@ def log(message, log_file):
 
 def get_log_file():
 
-    if '-reuse_log' not in sys.argv:
+    # Create log directory if nonexistant
+    if not path.exists('image_heap/logs'):
+        mkdir('image_heap/logs')
+
+    if '--reuse_log' not in sys.argv:
         # Define variables
         name, i = None, 0
 
@@ -122,7 +126,7 @@ def get_log_file():
         
         return name
 
-    # if -reuse_log was specified as an argument during cmd line execution
+    # if --reuse_log was specified as an argument during cmd line execution
     else:
         files_amt = len(listdir('image_heap/logs/'))
         return 'image_heap/logs/check_log_{}.txt'.format(files_amt)
@@ -137,8 +141,11 @@ if __name__ == '__main__':
     - image_heap/unchecked/negative/
     for duplicate images (only in their respective folders)
     and moves unique files to corresponding image_heap/checked/ folders
-    * Program can be run with the option '-reuse_log' to use the most recently
+    * Program can be run with the option '--reuse_log' to use the most recently
     created log instead of creating a new one
+
+    >> To cancel cleaning, press 'CRTL c' together <<
+    - You can resume cleaning by rerunning the execution (consider using '--reuse_log')
     ''')
 
     # Reassure user program is starting
@@ -155,64 +162,73 @@ if __name__ == '__main__':
     # Define deletions
     deletions = 0
 
-    # Iterate through both folders
-    for fol in folders:
+    try:
 
-        print('Now checking ' + fol + '\n')
+        # Iterate through both folders
+        for fol in folders:
 
-        # Define dst_fol
-        if 'positive' in fol:
-            dst_fol = dst_folders[0]
-        else:
-            dst_fol = dst_folders[1]
+            print('Now checking ' + fol + '\n')
 
-        # Sort files in fol
-        sorted_files = sorted(listdir(fol), key=lambda x: int(x.split('.')[0]))
+            # Define dst_fol
+            if 'positive' in fol:
+                dst_fol = dst_folders[0]
+            else:
+                dst_fol = dst_folders[1]
 
-        # Iterate through sorted files
-        for file in sorted_files:
+            # Sort files in fol
+            sorted_files = sorted(listdir(fol), key=lambda x: int(x.split('.')[0]))
 
-            if path.exists(fol + file):
+            # Iterate through sorted files
+            for file in sorted_files:
 
-                # Create PIL Image obj of file
-                img1 = return_img_obj(fol + file)
+                if path.exists(fol + file):
 
-                # If img1 is PIL Image obj
-                if img1 != None:
+                    # Create PIL Image obj of file
+                    img1 = return_img_obj(fol + file)
+
+                    # If img1 is PIL Image obj
+                    if img1 != None:
+                        
+                        # Check other files in fol for duplicates
+                        deletions = check_other_files(img1, fol, deletions)
+
+                        # Get new name for image file
+                        new_name, i = None, 1
+                        while new_name == None or path.exists(dst_fol + new_name):
+                            new_name = str(i) + '.jpg'
+                            i += 1
+
+                        # Attempt to move file
+                        try:
+                            rename(fol + file, dst_fol + new_name)
+                            message = 'Successfully moved ' + fol + file
+                            log(message, log_file)
+                            print(message)
+                        except PermissionError:
+                            message = 'PermissionError on ' + fol + file
+                            log(message, log_file)
+                            print(message)
                     
-                    # Check other files in fol for duplicates
-                    deletions = check_other_files(img1, fol, deletions)
-
-                    # Get new name for image file
-                    new_name, i = None, 1
-                    while new_name == None or path.exists(dst_fol + new_name):
-                        new_name = str(i) + '.jpg'
-                        i += 1
-
-                    # Attempt to move file
-                    try:
-                        rename(fol + file, dst_fol + new_name)
-                        message = 'Successfully moved ' + fol + file
+                    # If PIL Image obj creation wasn't successful
+                    else:
+                        remove(fol + file)
+                        deletions += 1
+                        message = 'Could not open and deleted ' + fol + file
                         log(message, log_file)
                         print(message)
-                    except PermissionError:
-                        message = 'PermissionError on ' + fol + file
-                        log(message, log_file)
-                        print(message)
-                
-                # If PIL Image obj creation wasn't successful
-                else:
-                    remove(fol + file)
-                    deletions += 1
-                    message = 'Could not open and deleted ' + fol + file
-                    log(message, log_file)
-                    print(message)
 
+    except KeyboardInterrupt:
+
+        print('Cleaning interrupted.')
+
+    finally:
+        
+        # Log and print results
         unique_imgs = len(listdir(dst_fol))
 
         messages = [
             '\n\nEnded check in {}. Results:'.format(fol),
-            'Unique images: ' + str(unique_imgs),
+            'Unique images in {}: {}'.format(dst_fol, str(unique_imgs)),
             'Deletions: ' + str(deletions) + '\n\n'
         ]
         for mes in messages:
