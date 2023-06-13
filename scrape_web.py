@@ -7,6 +7,11 @@ from selenium.common.exceptions import NoSuchElementException
 from os import listdir, mkdir, remove, path
 import requests, sys, time
 
+# Search engine URLs are meant to allow keywords to be appended to the end of them
+# and be a useable search URL afterward. Adding new search engine URLs might take
+# some experimenting
+search_engine_urls = ['https://www.bing.com/images/search?q=']
+
 
 
 def yield_keywords(file):
@@ -158,11 +163,6 @@ if __name__ == '__main__':
     negative_keywords = list(yield_keywords('keywords/negative_kw.txt'))
 
     log_file = get_log_file()
-
-    # Search engine urls are meant to allow kw to be appended to the end of them
-    # and be a useable search url afterward. Adding new search engine urls might take
-    # some experimenting
-    search_engine_urls = ['https://www.bing.com/images/search?q=']
 
     parent_save_folder = 'image_heap/unchecked/'
 
