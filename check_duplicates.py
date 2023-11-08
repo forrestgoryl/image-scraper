@@ -159,21 +159,21 @@ if __name__ == '__main__':
     # Define log file
     log_file = get_log_file()
 
-    # Define deletions
-    deletions = 0
-
     try:
 
         # Iterate through both folders
         for fol in folders:
 
-            print('Now checking ' + fol + '\n')
+            print('\nNow checking ' + fol + '\n')
 
             # Define dst_fol
             if 'positive' in fol:
                 dst_fol = dst_folders[0]
             else:
                 dst_fol = dst_folders[1]
+
+            # Define deletions
+            deletions = 0
 
             # Sort files in fol
             sorted_files = sorted(listdir(fol), key=lambda x: int(x.split('.')[0]))
@@ -217,20 +217,18 @@ if __name__ == '__main__':
                         log(message, log_file)
                         print(message)
 
+            # Log and print results
+            unique_imgs = len(listdir(dst_fol))
+
+            messages = [
+                '\n\nEnded check in {}. Results:'.format(fol),
+                'Unique images in {}: {}'.format(dst_fol, str(unique_imgs)),
+                'Deletions: ' + str(deletions) + '\n\n'
+            ]
+            for mes in messages:
+                log(mes, log_file)
+                print(mes)
+
     except KeyboardInterrupt:
 
         print('Cleaning interrupted.')
-
-    finally:
-        
-        # Log and print results
-        unique_imgs = len(listdir(dst_fol))
-
-        messages = [
-            '\n\nEnded check in {}. Results:'.format(fol),
-            'Unique images in {}: {}'.format(dst_fol, str(unique_imgs)),
-            'Deletions: ' + str(deletions) + '\n\n'
-        ]
-        for mes in messages:
-            log(mes, log_file)
-            print(mes)
