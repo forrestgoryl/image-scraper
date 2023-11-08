@@ -3,71 +3,59 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.firefox.options import Options
-from selenium.common.exceptions import NoSuchElementException
-from os import listdir, mkdir, remove, path
-import requests, sys, time
+from selenium.common.exceptions import NoSuchElementException, TimeoutException
+from helpers import log
+import helpers, os, sys, time
+
 
 # Search engine URLs are meant to allow keywords to be appended to the end of them
-# and be a useable search URL afterward. Adding new search engine URLs might take
-# some experimenting
-search_engine_urls = ['https://www.bing.com/images/search?q=']
+# and be a useable search URL afterward. In other words, search engine urls should end
+# with 'q='. Do not worry about keyphrases and spaces being appended to these urls and
+# not working; yield_keywords() automatically solves this problem.
+SEARCH_ENGINE_URLS = [
+    'https://www.bing.com/images/search?q=',
+]
 
 
-
-def yield_keywords(file):
-    
-    # Open file
-    with open(file, 'r') as keywords:
-
-        # read lines in file
-        for line in keywords.readlines():
-
-            # yield line without spaces or newline characters
-            yield line.replace(' ', '+').replace("\n", '')
+# Defines the minimum size of image the program will click on. Adjusting is useful
+# if program gets hung up on small icons that are links to other search pages and not
+# actually image links.
+SUITABLE_IMAGE_SIZE = 130*130
 
 
-def ready_webpage(wait, driver, desired_img_amount):
+def ready_webpage(wait, driver, scroll_amount):
 
     # Scroll webpage to load more images
-    for i in range(3):
-        
+    for i in range(scroll_amount):
+
         # Scroll to bottom of page
         driver.execute_script('window.scrollTo(0, document.body.scrollHeight);')
 
-        # Wait a few seconds
+        # Wait for 3 seconds
         time.sleep(3)
 
     return driver
 
 
-def yield_suitable_imgs(img_tags):
+def yield_suitable_imgs(imgs):
 
-    # Iterate through img_tags
-    for e in img_tags:
+    # Iterate through imgs
+    for element in imgs:
 
-        # If pixel count is >= 4500
-        if e.size['height'] * e.size['width'] >= 4500:
+        # If img is >= SUITABLE_IMAGE_SIZE
+        if element.size['height'] * element.size['width'] >= SUITABLE_IMAGE_SIZE:
 
-            yield e
-
-
-def return_save_folder(kw, parent_save_folder):
-
-    # Returns positive save_folder or negative save_folder
-    if kw in positive_keywords:
-        return parent_save_folder + 'positive/'
-    else:
-        return parent_save_folder + 'negative/'
+            yield element
 
 
-def locate_largest_img_element(img_tags):
+def locate_largest_img(imgs):
 
     # Define trackers
     largest_pixel_count = 0
     largest_element = None
 
     # Iterate through each element, keeping track of largest element
-    for element in img_tags:
+    for element in imgs:
         try:
             size = element.size
         except NoSuchElementException:
@@ -81,251 +69,207 @@ def locate_largest_img_element(img_tags):
     return largest_element
 
 
-def cycle_kw(kw, positive_keywords):
-
-    # Define variables
-    parent = 'keywords/'
-    used_kw_log = parent + 'used_kw_log.txt'
-
-    # Get kw file
-    if kw in positive_keywords:
-        kw_file = parent + 'positive_kw.txt'
-    else:
-        kw_file = parent + 'negative_kw.txt'
-
-    # Replace '+' in kw with space
-    kw = kw.replace('+', ' ')
-
-    # Append kw to used kw log
-    with open(used_kw_log, 'a') as f:
-        f.write(kw + '\n')
-    
-    # Copy contents of kw file
-    with open(kw_file, 'r') as f:
-        contents = [line.replace('\n', '') for line in f.readlines()]
-    
-    # Remove kw from contents
-    contents.remove(kw)
-
-    # Write new contents to kw file
-    with open(kw_file, 'w') as f:
-        f.write('\n'.join(contents))
-
-
-    
-def log(message, log_file):
-    
-    # Open log file
-    with open(log_file, 'a') as f:
-        
-        # Write message + newline
-        f.write(message + '\n')
-
-
-def get_log_file():
-
-    if '--reuse_log' not in sys.argv:
-        # Define variables
-        name, i = None, 0
-
-        # Continue to rename 'name' until no file is found in 'logs/' with same name
-        while name == None or path.exists(name):
-            i += 1
-            name = 'logs/scrape_log_{}.txt'.format(i)
-        
-        return name
-    
-    # if --reuse_log was specified as an argument during cmd line execution
-    else:
-        files_amt = len(listdir('logs/'))
-        return 'logs/scrape_log_{}.txt'.format(files_amt)
-
-
-
 if __name__ == '__main__':
 
-    print('''\nProgram expects
+    print('''
+    Program expects
 
     *All positive-outcome keywords be in keywords/positive_kw.txt
 
     *All negative-outcome keywords be in keywords/negative_kw.txt
 
-    *Scrape is done in 'headless' mode by default,
+    Scrape is done in 'headless' mode by default,
     if browser visibility is desired add the argument '--see_browser'
     to command line execution of program
 
-    *The argument '--reuse_log' can also be stated in command line execution
+    The argument '--reuse_log' can also be stated in command line execution
     to append results to most recent log 
     (useful for starting a previously-stopped scrape again, to share same log)
     \n''')
     
-    positive_keywords = list(yield_keywords('keywords/positive_kw.txt'))
-    negative_keywords = list(yield_keywords('keywords/negative_kw.txt'))
+    # Grab keywords lists
+    positive_keywords = list(helpers.yield_keywords('keywords/positive_kw.txt'))
+    negative_keywords = list(helpers.yield_keywords('keywords/negative_kw.txt'))
 
-    log_file = get_log_file()
+    # Define where to log
+    log_file = helpers.get_log_file(sys.argv)
 
-    parent_save_folder = 'image_heap/unchecked/'
+    # Setup webdriver Options (disable caching, use private browsing, etc.)
+    options = helpers.setup_options(sys.argv)
 
-    # Disable browser caching in driver
-    options = Options()
-    options.set_preference('browser.cache.disk.enable', False)
-    options.set_preference('browser.cache.memory.enable', False)
-    options.set_preference('browser.cache.offline.enable', False)
-    options.set_preference('network.http.use-cache', False)
-
-    # Enable headless mode
-    if '--see_browser' not in sys.argv:
-        options.add_argument('-headless')
-
-    # Create a new instance of the Firefox browser driver
-    driver = webdriver.Firefox(options=options)    
-
-    # Define basic wait amount
-    wait = WebDriverWait(driver, 10)
-
-    # for use in 'wait' functions
+    # For use in 'wait' and 'find_elements' functions 
+    # (defined here so as to not redefine in for loops)
     img_locator = (By.TAG_NAME, 'img')
 
-    # Run scraper inside of try... except... finally so driver 
-    # can close properly even with error raised
-    try:
-        for kw in positive_keywords + negative_keywords:
+    for kw in positive_keywords + negative_keywords:
+
+        try:
+
+            # Create new instance of Firefox
+            driver = webdriver.Firefox(options=options)
+
+            # Define wait amount (in seconds)
+            wait = WebDriverWait(driver, 10)
+
             message = 'Searching for ' + kw + '\n'
             log(message, log_file)
             print(message)
-            
-            downloads = {
-                'success': 0,
-                'failure': 0
-            }
 
-            save_folder = return_save_folder(kw, parent_save_folder)
+            # Search for kw in each search engine
+            for url in SEARCH_ENGINE_URLS:
 
-            if not path.exists(save_folder):
-                mkdir(save_folder)
-
-            # Open browser, search, then ready webpage
-            for url in search_engine_urls:
                 message = 'Opening ' + url + kw + '\n'
                 log(message, log_file)
                 print(message)
+
+                # Open browser
                 driver.get(url + kw)
-                driver = ready_webpage(wait, driver, 200)
 
-                # Isolate all <img> tags
-                img_tags = driver.find_elements(*img_locator)
+                # Scroll to load more images
+                driver = ready_webpage(wait, driver, scroll_amount=3)
 
-                # Filter <img> tags by size, keeping the suitable ones
-                suitable_imgs = yield_suitable_imgs(img_tags)
+                # Find all image elements
+                img_elements = driver.find_elements(*img_locator)
 
-                # Iterate through each <img> WebElement
-                for element in suitable_imgs:
+                # Reload webpage if images aren't located
+                while len(img_elements) < 15:
                     
-                    # Try to click on the element
-                    clicked = False
+                    # Wait between get requests so as to not annoy search engine server
+                    time.sleep(10)
+
+                    driver.get(url + kw)
+                    img_elements = driver.find_elements(*img_lcator)
+
+                # Filter image elements by size
+                suitable_imgs = yield_suitable_imgs(img_elements)
+
+                # Define variable for logging performance
+                downloads = {
+                    'success': 0,
+                    'failure': 0
+                }
+                
+                # Iterate through each suitable image
+                for element in suitable_imgs:
+
+                    # Scroll to the element
+                    driver.execute_script("arguments[0].scrollIntoView({block: 'start', inline: 'start', behavior: 'smooth'});", element)
+
+                    # Wait until element is clickable
+                    wait.until(EC.element_to_be_clickable(element))
+
+                    # Click on element
                     try:
                         element.click()
                         clicked = True
                     except Exception as e:
+                        clicked = False
                         message = 'Experienced exception when clicking on element'
                         log(message, log_file)
-                        # log(str(e.args), log_file)
                         print(message)
+                        # log(f'type of error: {type(e)}\n{str(e)}', log_file)  # Uncomment to log full exception
+                        # print(f'type of error: {type(e)}\n{str(e)}')          # Uncomment to print full exception
+
                     if clicked:
-                        
 
-                        # Check if there are two or more tabs open
-                        if len(driver.window_handles) > 1:\
+                        # Wait for webdriver to be fully ready
+                        time.sleep(0.5)
 
-                            # Close all tabs except the first one
-                            for handle in driver.window_handles[1:]:
-                                driver.switch_to.window(handle)
-                                driver.close()
+                        # Handle new tabs
+                        driver = helpers.handle_new_tab(driver)
 
-                            # Switch back to the first tab
-                            driver.switch_to.window(driver.window_handles[0])
+                        # Wait for webdriver to be fully ready
+                        time.sleep(0.5)
 
-                        # Set download_success to false
-                        download_success = False
-
-                        # Switch driver focus to <iframe>
+                        # Switch driver focus to iframe if exists
                         iframe = driver.find_element(By.TAG_NAME, 'iframe')
                         driver.switch_to.frame(iframe)
 
-                        # Locate largest <img> WebElement
-                        img_tags = wait.until(EC.presence_of_all_elements_located(img_locator))
-                        if img_tags != None:
-                            largest_img_element = locate_largest_img_element(img_tags)
-                            if largest_img_element != None:
-                                try:
-                                    # Request image data
-                                    src = largest_img_element.get_attribute('src')
-                                    response = requests.get(src)
-                                    
-                                    # Define save path
-                                    filename = f'{len(listdir(save_folder)) + 1}.jpg'
-                                    filepath = save_folder + filename
+                        # Wait for webdriver to be fully ready
+                        time.sleep(0.5)
 
-                                    # save file
-                                    with open(filepath, 'wb') as file:
-                                        file.write(response.content)
-                                    
-                                    # log result
+                        # Locate largest image in iframe
+                        try:
+                            iframe_img_elements = wait.until(EC.presence_of_all_elements_located(img_locator))
+                        except TimeoutException:
+                            iframe_img_elements = None
+
+                        if iframe_img_elements != None:
+
+                            # Locate largest image
+                            largest_img = locate_largest_img(iframe_img_elements)
+
+                            if largest_img != None:
+
+                                try:
+                                    # Get src
+                                    src = largest_img.get_attribute('src')
+
+                                    # Create absolute path to save location
+                                    filepath = helpers.return_filepath(kw, positive_keywords)
+
+                                    # Save image
+                                    helpers.save_img(src, filepath)
+
+                                    # Log download success
                                     downloads['success'] += 1
-                                    message = 'Downloaded ' + filename
+                                    message = 'Downloaded ' + filepath
+                                    log(message, log_file)
+                                    print(message)
+
+                                except Exception as e:
+
+                                    # Log download failure
+                                    downloads['failure'] += 1
+                                    message = 'Experienced exception when saving image (during request of or writing of image)'
                                     log(message, log_file)
                                     print(message)
                                     
-                                except Exception as e:
-                                    message = 'Experienced exception when requesting or writing image data'
-                                    log(message, log_file)
-                                    # log(str(e.args), log_file)
-                                    print(message)
-                                    print(str(e.args))
-                                    downloads['failure'] += 1
-                        
+                                    # log(f'type of error: {type(e)}\n{str(e)}', log_file)  # Uncomment to log full exception
+                                    # print(f'type of error: {type(e)}\n{str(e)}')          # Uncomment to print full exception
+
                         # Switch driver focus back
                         driver.switch_to.default_content()
-                        
+
                         # Navigate back to starting page
                         driver.back()
 
-            # Log and print results
-            messages = [
-                '\nResults for ' + kw,
-                f'Successes: {downloads["success"]}, failures: {downloads["failure"]}\n'
-            ]
-            for mes in messages:
-                log(mes, log_file)
-                print(mes)
+                # Erase keyword from appropriate keywords/*.txt file
+                # and appends to keywords/used_kw_log.txt
+                helpers.cycle_kw(kw, positive_keywords)
 
-            # Erases kw from kw_file and appends to used_kw_log
-            cycle_kw(kw, positive_keywords)
+                # Wait for search engine server to not get mad at quantity of requests
+                time.sleep(10)
+            
+            # Shut driver off (will start new one at beginning of loop if continuing)
+            driver.close()
 
-    except Exception as e:
 
-        # Reassure user that the program is stopping
-        print('\nProgram is stopping... Do not hit crtl-c\n')
+        except KeyboardInterrupt:
 
-        # Erase last result from used kw log
-        used_kw_log = 'keywords/used_kw_log.txt'
-        with open(used_kw_log, 'r') as f:
-            contents = [line.replace('\n', '') for line in f.readlines()]
-        contents.pop(-1)
-        with open(used_kw_log, 'w') as f:
-            f.write('\n'.join(contents))
-        
-        # Print error
-        print(str(e) + '\n')
+            # Assure user program is stopping
+            print('\nProgram stopping\n')
 
-        # Print results obtained up to the exception
-        messages = [
-            '\nResults for ' + kw,
-            f'Successes: {downloads["success"]}, failures: {downloads["failure"]}\n'
-        ]
-        for mes in messages:
-            log(mes, log_file)
-            print(mes)
-        
-    finally:
-        driver.close()
+            driver.close()
+            sys.exit()
+
+        except Exception as e:
+            
+            message =   f'''
+                        Experienced exception while searching for {kw}
+                        Exception was type {type(e)}
+                        ''' + '\n' + str(e)
+            log(message, log_file)
+            print(message)
+
+        finally:
+
+            # Record results
+            if 'downloads' in globals():
+                messages = [
+                    '\n Results for ' + kw,
+                    'Successes: {}, failures: {}\n'.format(downloads['success'], downloads['failure'])
+                ]
+                for message in messages:
+                    log(message, log_file)
+                    print(message)
