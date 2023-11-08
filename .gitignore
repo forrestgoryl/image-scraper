@@ -1,1 +1,5 @@
 .venv
+logs/*.txt
+image_heap/logs/*.txt
+*.jpg
+__pycache__
