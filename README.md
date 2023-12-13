@@ -7,7 +7,7 @@
 ### **image-scraper** uses the selenium library to search for your keywords, enlarge each image on the search page, and then uses the requests library to download the image.
 
 <!-- Video -->
-Video walkthrough coming soon!
+[Video walkthrough](https://www.youtube.com/watch?v=towKf-hvXiE)
 
 <!-- Installation Instructions -->
 **image-scraper** is executed in the command line. To use this application, a basic understanding of your command terminal of choice is required. The installation instructions are as follows:
